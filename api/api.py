@@ -99,6 +99,15 @@ class WikiExportRequest(BaseModel):
     pages: List[WikiPage] = Field(..., description="List of wiki pages to export")
     format: Literal["markdown", "json"] = Field(..., description="Export format (markdown or json)")
 
+class WikiPageUpdate(BaseModel):
+    owner: str
+    repo: str
+    repo_type: str
+    language: str
+    page_id: str
+    title: str
+    content: str
+
 # --- Model Configuration Models ---
 class Model(BaseModel):
     """
@@ -323,8 +332,6 @@ def generate_markdown_export(repo_url: str, pages: List[WikiPage]) -> str:
         markdown += f"<a id='{page.id}'></a>\n\n"
         markdown += f"## {page.title}\n\n"
 
-
-
         # Add related pages
         if page.relatedPages and len(page.relatedPages) > 0:
             markdown += "### Related Pages\n\n"
@@ -419,7 +426,6 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
         except Exception as ser_e:
             logger.warning(f"Could not serialize payload for size logging: {ser_e}")
 
-
         logger.info(f"Writing cache file to: {cache_path}")
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(payload.model_dump(), f, indent=2)
@@ -496,6 +502,41 @@ async def delete_wiki_cache(
     else:
         logger.warning(f"Wiki cache not found, cannot delete: {cache_path}")
         raise HTTPException(status_code=404, detail="Wiki cache not found")
+
+@app.put("/api/wiki_cache/page")
+async def update_wiki_page(request: WikiPageUpdate):
+    """
+    Updates a specific page in the wiki cache.
+    """
+    try:
+        logger.info(f"Updating wiki page {request.page_id} for {request.owner}/{request.repo}")
+        
+        # Load existing cache
+        cache_file = get_wiki_cache_path(request.owner, request.repo, request.repo_type, request.language)
+        
+        if not os.path.exists(cache_file):
+            raise HTTPException(status_code=404, detail="Wiki cache not found")
+            
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+            
+        if not cache_data.get('generated_pages') or request.page_id not in cache_data['generated_pages']:
+            raise HTTPException(status_code=404, detail="Page not found in wiki cache")
+            
+        # Update the page
+        cache_data['generated_pages'][request.page_id]['title'] = request.title
+        cache_data['generated_pages'][request.page_id]['content'] = request.content
+        
+        # Save updated cache
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            
+        return {"message": "Wiki page updated successfully"}
+        
+    except Exception as e:
+        error_msg = f"Error updating wiki page: {str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.get("/health")
 async def health_check():
