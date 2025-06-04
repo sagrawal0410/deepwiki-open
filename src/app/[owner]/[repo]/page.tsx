@@ -1746,6 +1746,259 @@ IMPORTANT:
 
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
 
+  // Add fetchPageContent function before the return statement
+  const fetchPageContent = async (pageId: string) => {
+    if (!wikiStructure || !pageId || activeContentRequests.get(pageId)) {
+      return;
+    }
+
+    const page = wikiStructure.pages.find(p => p.id === pageId);
+    if (!page) {
+      return;
+    }
+
+    try {
+      activeContentRequests.set(pageId, true);
+      setPagesInProgress(prev => new Set(prev).add(pageId));
+
+      // Get repository URL
+      const repoUrl = getRepoUrl(effectiveRepoInfo);
+
+      // Prepare request body
+      const requestBody = {
+        repo_url: repoUrl,
+        type: effectiveRepoInfo.type,
+        messages: [{
+          role: 'user',
+          content: `You are an expert technical writer and software architect.
+Your task is to generate a comprehensive and accurate technical wiki page in Markdown format about a specific feature, system, or module within a given software project.
+
+You will be given:
+1. The "[WIKI_PAGE_TOPIC]" for the page you need to create.
+2. A list of "[RELEVANT_SOURCE_FILES]" from the project that you MUST use as the sole basis for the content. You have access to the full content of these files. You MUST use AT LEAST 5 relevant source files for comprehensive coverage - if fewer are provided, search for additional related files in the codebase.
+
+CRITICAL STARTING INSTRUCTION:
+The very first thing on the page MUST be a \`<details>\` block listing ALL the \`[RELEVANT_SOURCE_FILES]\` you used to generate the content. There MUST be AT LEAST 5 source files listed - if fewer were provided, you MUST find additional related files to include.
+Format it exactly like this:
+<details>
+<summary>Relevant source files</summary>
+
+Remember, do not provide any acknowledgements, disclaimers, apologies, or any other preface before the \`<details>\` block. JUST START with the \`<details>\` block.
+The following files were used as context for generating this wiki page:
+
+${page.filePaths.map(path => `- [${path}](${path})`).join('\n')}
+<!-- Add additional relevant files if fewer than 5 were provided -->
+</details>
+
+Immediately after the \`<details>\` block, the main title of the page should be a H1 Markdown heading: \`# ${page.title}\`.
+
+Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
+
+1.  **Introduction:** Start with a concise introduction (1-2 paragraphs) explaining the purpose, scope, and high-level overview of "${page.title}" within the context of the overall project. If relevant, and if information is available in the provided files, link to other potential wiki pages using the format \`[Link Text](#page-anchor-or-id)\`.
+
+2.  **Detailed Sections:** Break down "${page.title}" into logical sections using H2 (\`##\`) and H3 (\`###\`) Markdown headings. For each section:
+    *   Explain the architecture, components, data flow, or logic relevant to the section's focus, as evidenced in the source files.
+    *   Identify key functions, classes, data structures, API endpoints, or configuration elements pertinent to that section.
+
+3.  **Mermaid Diagrams:**
+    *   EXTENSIVELY use Mermaid diagrams (e.g., \`flowchart TD\`, \`sequenceDiagram\`, \`classDiagram\`, \`erDiagram\`, \`graph TD\`) to visually represent architectures, flows, relationships, and schemas found in the source files.
+    *   Ensure diagrams are accurate and directly derived from information in the \`[RELEVANT_SOURCE_FILES]\`.
+    *   Provide a brief explanation before or after each diagram to give context.
+    *   CRITICAL: All diagrams MUST follow strict vertical orientation:
+       - Use "graph TD" (top-down) directive for flow diagrams
+       - NEVER use "graph LR" (left-right)
+       - Maximum node width should be 3-4 words
+       - For sequence diagrams:
+         - Start with "sequenceDiagram" directive on its own line
+         - Define ALL participants at the beginning
+         - Use descriptive but concise participant names
+         - Use the correct arrow types:
+           - ->> for request/asynchronous messages
+           - -->> for response messages
+           - -x for failed messages
+         - Include activation boxes using +/- notation
+         - Add notes for clarification using "Note over" or "Note right of"
+
+4.  **Tables:**
+    *   Use Markdown tables to summarize information such as:
+        *   Key features or components and their descriptions.
+        *   API endpoint parameters, types, and descriptions.
+        *   Configuration options, their types, and default values.
+        *   Data model fields, types, constraints, and descriptions.
+
+5.  **Code Snippets:**
+    *   Include short, relevant code snippets (e.g., Python, Java, JavaScript, SQL, JSON, YAML) directly from the \`[RELEVANT_SOURCE_FILES]\` to illustrate key implementation details, data structures, or configurations.
+    *   Ensure snippets are well-formatted within Markdown code blocks with appropriate language identifiers.
+
+6.  **Source Citations (EXTREMELY IMPORTANT):**
+    *   For EVERY piece of significant information, explanation, diagram, table entry, or code snippet, you MUST cite the specific source file(s) and relevant line numbers from which the information was derived.
+    *   Place citations at the end of the paragraph, under the diagram/table, or after the code snippet.
+    *   Use the exact format: \`Sources: [filename.ext:start_line-end_line]()\` for a range, or \`Sources: [filename.ext:line_number]()\` for a single line. Multiple files can be cited: \`Sources: [file1.ext:1-10](), [file2.ext:5](), [dir/file3.ext]()\` (if the whole file is relevant and line numbers are not applicable or too broad).
+    *   If an entire section is overwhelmingly based on one or two files, you can cite them under the section heading in addition to more specific citations within the section.
+    *   IMPORTANT: You MUST cite AT LEAST 5 different source files throughout the wiki page to ensure comprehensive coverage.
+
+7.  **Technical Accuracy:** All information must be derived SOLELY from the \`[RELEVANT_SOURCE_FILES]\`. Do not infer, invent, or use external knowledge about similar systems or common practices unless it's directly supported by the provided code. If information is not present in the provided files, do not include it or explicitly state its absence if crucial to the topic.
+
+8.  **Clarity and Conciseness:** Use clear, professional, and concise technical language suitable for other developers working on or learning about the project. Avoid unnecessary jargon, but use correct technical terms where appropriate.
+
+9.  **Conclusion/Summary:** End with a brief summary paragraph if appropriate for "${page.title}", reiterating the key aspects covered and their significance within the project.
+
+IMPORTANT: Generate the content in ${language === 'en' ? 'English' :
+            language === 'ja' ? 'Japanese (日本語)' :
+            language === 'zh' ? 'Mandarin Chinese (中文)' :
+            language === 'es' ? 'Spanish (Español)' :
+            language === 'kr' ? 'Korean (한국어)' :
+            language === 'vi' ? 'Vietnamese (Tiếng Việt)' : 'English'} language.
+
+Remember:
+- Ground every claim in the provided source files.
+- Prioritize accuracy and direct representation of the code's functionality and structure.
+- Structure the document logically for easy understanding by other developers.`
+        }]
+      };
+
+      // Add tokens and other parameters
+      addTokensToRequestBody(
+        requestBody,
+        currentToken,
+        effectiveRepoInfo.type,
+        selectedProviderState,
+        selectedModelState,
+        isCustomSelectedModelState,
+        customSelectedModelState,
+        language,
+        modelExcludedDirs,
+        modelExcludedFiles
+      );
+
+      let content = '';
+
+      try {
+        // Create WebSocket URL from the server base URL
+        const serverBaseUrl = process.env.NEXT_PUBLIC_SERVER_BASE_URL || 'http://localhost:8001';
+        const wsBaseUrl = serverBaseUrl.replace(/^http/, 'ws');
+        const wsUrl = `${wsBaseUrl}/ws/chat`;
+
+        // Create a new WebSocket connection
+        const ws = new WebSocket(wsUrl);
+
+        // Create a promise that resolves when the WebSocket connection is complete
+        await new Promise<void>((resolve, reject) => {
+          // Set up event handlers
+          ws.onopen = () => {
+            console.log(`WebSocket connection established for page: ${page.title}`);
+            // Send the request as JSON
+            ws.send(JSON.stringify(requestBody));
+            resolve();
+          };
+
+          ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            reject(new Error('WebSocket connection failed'));
+          };
+
+          // If the connection doesn't open within 5 seconds, fall back to HTTP
+          const timeout = setTimeout(() => {
+            reject(new Error('WebSocket connection timeout'));
+          }, 5000);
+
+          // Clear the timeout if the connection opens successfully
+          ws.onopen = () => {
+            clearTimeout(timeout);
+            console.log(`WebSocket connection established for page: ${page.title}`);
+            // Send the request as JSON
+            ws.send(JSON.stringify(requestBody));
+            resolve();
+          };
+        });
+
+        // Create a promise that resolves when the WebSocket response is complete
+        await new Promise<void>((resolve, reject) => {
+          // Handle incoming messages
+          ws.onmessage = (event) => {
+            content += event.data;
+          };
+
+          // Handle WebSocket close
+          ws.onclose = () => {
+            console.log(`WebSocket connection closed for page: ${page.title}`);
+            resolve();
+          };
+
+          // Handle WebSocket errors
+          ws.onerror = (error) => {
+            console.error('WebSocket error during message reception:', error);
+            reject(new Error('WebSocket error during message reception'));
+          };
+        });
+      } catch (wsError) {
+        console.error('WebSocket error, falling back to HTTP:', wsError);
+
+        // Fall back to HTTP if WebSocket fails
+        const response = await fetch(`/api/chat/stream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error generating page content: ${response.status} - ${response.statusText}`);
+        }
+
+        // Process the response
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+          throw new Error('Failed to get response reader');
+        }
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            content += decoder.decode(value, { stream: true });
+          }
+          // Ensure final decoding
+          content += decoder.decode();
+        } catch (readError) {
+          console.error('Error reading stream:', readError);
+          throw new Error('Error processing response stream');
+        }
+      }
+
+      // Clean up markdown delimiters
+      content = content.replace(/^```markdown\s*/i, '').replace(/```\s*$/i, '');
+
+      console.log(`Received content for ${page.title}, length: ${content.length} characters`);
+
+      // Store the FINAL generated content
+      const updatedPage = { ...page, content };
+      setGeneratedPages(prev => ({ ...prev, [pageId]: updatedPage }));
+      // Store this as the original for potential mermaid retries
+      setOriginalMarkdown(prev => ({ ...prev, [pageId]: content }));
+
+    } catch (error) {
+      console.error(`Error generating content for page ${pageId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Update page state to show error
+      setGeneratedPages(prev => ({
+        ...prev,
+        [pageId]: { ...page, content: `Error generating content: ${errorMessage}` }
+      }));
+      setError(`Failed to generate content for ${page.title}.`);
+    } finally {
+      activeContentRequests.delete(pageId);
+      setPagesInProgress(prev => {
+        const next = new Set(prev);
+        next.delete(pageId);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
       <style>{wikiStyles}</style>
@@ -1789,7 +2042,32 @@ IMPORTANT:
                     [updatedPage.id]: updatedPage
                   }));
                 }}
-                className="bg-[var(--card-bg)] p-8 rounded-lg shadow-sm border border-[var(--border-color)]"
+                onRefresh={async () => {
+                  setIsLoading(true);
+                  setLoadingMessage(messages.loading?.refreshing || 'Refreshing wiki...');
+                  try {
+                    // Clear the current page's cache
+                    const cacheKey = getCacheKey(owner, repo, repoType, language, isComprehensiveView);
+                    const cachedData = localStorage.getItem(cacheKey);
+                    if (cachedData) {
+                      const parsedData = JSON.parse(cachedData);
+                      if (parsedData.generated_pages && parsedData.generated_pages[currentPageId]) {
+                        delete parsedData.generated_pages[currentPageId];
+                        localStorage.setItem(cacheKey, JSON.stringify(parsedData));
+                      }
+                    }
+                    
+                    // Re-fetch the page content
+                    await fetchPageContent(currentPageId);
+                  } catch (error) {
+                    console.error('Error refreshing wiki:', error);
+                    setError(error instanceof Error ? error.message : 'Failed to refresh wiki');
+                  } finally {
+                    setIsLoading(false);
+                    setLoadingMessage(undefined);
+                  }
+                }}
+                className="flex-1 px-8 py-12 overflow-y-auto"
               />
             ) : (
               <div className="text-center py-12 text-[var(--muted)]">

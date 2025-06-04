@@ -478,30 +478,32 @@ async def delete_wiki_cache(
     repo: str = Query(..., description="Repository name"),
     repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
     language: str = Query(..., description="Language of the wiki content"),
-    authorization_code: str = Query(..., description="Authorization code")
+    authorization_code: Optional[str] = Query(None, description="Authorization code")
 ):
     """
-    Deletes a specific wiki cache from the file system.
+    Delete a wiki cache entry.
     """
-    if WIKI_AUTH_MODE:
-        logger.info("check the authorization code")
-        if WIKI_AUTH_CODE != authorization_code:
-            raise HTTPException(status_code=401, detail="Authorization code is invalid")
+    try:
+        logger.info(f"Deleting wiki cache for {owner}/{repo}")
+        
+        # Check authorization if auth mode is enabled
+        if WIKI_AUTH_MODE:
+            if not authorization_code or authorization_code != WIKI_AUTH_CODE:
+                raise HTTPException(status_code=401, detail="Invalid authorization code")
 
-    logger.info(f"Attempting to delete wiki cache for {owner}/{repo} ({repo_type}), lang: {language}")
-    cache_path = get_wiki_cache_path(owner, repo, repo_type, language)
-
-    if os.path.exists(cache_path):
-        try:
-            os.remove(cache_path)
-            logger.info(f"Successfully deleted wiki cache: {cache_path}")
-            return {"message": f"Wiki cache for {owner}/{repo} ({language}) deleted successfully"}
-        except Exception as e:
-            logger.error(f"Error deleting wiki cache {cache_path}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete wiki cache: {str(e)}")
-    else:
-        logger.warning(f"Wiki cache not found, cannot delete: {cache_path}")
-        raise HTTPException(status_code=404, detail="Wiki cache not found")
+        cache_file = get_wiki_cache_path(owner, repo, repo_type, language)
+        
+        if not os.path.exists(cache_file):
+            raise HTTPException(status_code=404, detail="Wiki cache not found")
+            
+        os.remove(cache_file)
+        return {"success": True}
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error deleting wiki cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/wiki_cache/page")
 async def update_wiki_page(request: WikiPageUpdate):
