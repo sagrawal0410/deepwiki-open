@@ -1768,6 +1768,10 @@ IMPORTANT:
       const requestBody = {
         repo_url: repoUrl,
         type: effectiveRepoInfo.type,
+        provider: selectedProviderState || 'google', // Default to google if not set
+        model: selectedModelState || 'gemini-2.0-flash', // Default to gemini-2.0-flash if not set
+        is_custom_model: isCustomSelectedModelState,
+        custom_model: customSelectedModelState,
         messages: [{
           role: 'user',
           content: `You are an expert technical writer and software architect.
@@ -1862,8 +1866,8 @@ Remember:
         requestBody,
         currentToken,
         effectiveRepoInfo.type,
-        selectedProviderState,
-        selectedModelState,
+        selectedProviderState || 'google',
+        selectedModelState || 'gemini-2.0-flash',
         isCustomSelectedModelState,
         customSelectedModelState,
         language,
@@ -2056,6 +2060,35 @@ Remember:
                         localStorage.setItem(cacheKey, JSON.stringify(parsedData));
                       }
                     }
+
+                    // Clear the server-side cache for this page
+                    const params = new URLSearchParams({
+                      owner: effectiveRepoInfo.owner,
+                      repo: effectiveRepoInfo.repo,
+                      repo_type: effectiveRepoInfo.type,
+                      language: language,
+                      provider: selectedProviderState || 'google', // Default to google if not set
+                      model: selectedModelState || 'gemini-2.0-flash', // Default to gemini-2.0-flash if not set
+                      is_custom_model: isCustomSelectedModelState.toString(),
+                      custom_model: customSelectedModelState,
+                      comprehensive: isComprehensiveView.toString(),
+                      page_id: currentPageId,
+                    });
+
+                    // Add file filters configuration
+                    if (modelExcludedDirs) {
+                      params.append('excluded_dirs', modelExcludedDirs);
+                    }
+                    if (modelExcludedFiles) {
+                      params.append('excluded_files', modelExcludedFiles);
+                    }
+
+                    await fetch(`/api/wiki_cache?${params.toString()}`, {
+                      method: 'DELETE',
+                      headers: {
+                        'Accept': 'application/json',
+                      }
+                    });
                     
                     // Re-fetch the page content
                     await fetchPageContent(currentPageId);
